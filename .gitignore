@@ -1,0 +1,41 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv/
+
+# Model weights and data artefacts (hosted on Hugging Face Hub)
+*.pt
+*.pth
+src/data/
+src/models/
+
+# Environment / secrets
+.env
+.env.*
+
+# Jupyter
+.ipynb_checkpoints/
+
+# uv lock (platform-specific; requirements.txt used for deployment)
+uv.lock
+
+# IDE / tools
+.idea/
+.vscode/
+.claude/
+*.swp
+*.swo
+
+# Internal docs (keep README.md only)
+src/*.md
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini

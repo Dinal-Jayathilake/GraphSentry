@@ -1,0 +1,15 @@
+[project]
+name = "graphsentry"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "matplotlib>=3.10.8",
+    "networkx>=3.6.1",
+    "plotly>=6.6.0",
+    "scipy>=1.17.1",
+    "streamlit>=1.53.1",
+    "torch>=2.10.0",
+    "torch-geometric>=2.7.0",
+]
