@@ -296,18 +296,27 @@ def authenticate(email, password):
     """Validate credentials against secrets.toml using bcrypt."""
     try:
         creds = st.secrets.get("credentials", {})
-    except Exception:
+    except Exception as e:
+        st.error(f"DEBUG: secrets error: {e}")
         return False, None
+
+    st.info(f"DEBUG: creds keys = {list(creds.keys()) if hasattr(creds, 'keys') else type(creds)}")
 
     for user_key, user_data in creds.items():
         if user_data.get("email", "").lower() == email.lower():
             stored_hash = user_data.get("password", "")
-            if bcrypt.checkpw(password.encode(), stored_hash.encode()):
-                return True, {
-                    'name': user_data.get('name', email),
-                    'email': user_data.get('email', email),
-                    'role': user_data.get('role', 'analyst'),
-                }
+            st.info(f"DEBUG: matched email, hash starts with: {stored_hash[:20]}")
+            try:
+                if bcrypt.checkpw(password.encode(), stored_hash.encode()):
+                    return True, {
+                        'name': user_data.get('name', email),
+                        'email': user_data.get('email', email),
+                        'role': user_data.get('role', 'analyst'),
+                    }
+                else:
+                    st.error("DEBUG: bcrypt check returned False")
+            except Exception as e:
+                st.error(f"DEBUG: bcrypt error: {e}")
     return False, None
 
 
