@@ -7,6 +7,7 @@ import plotly.graph_objects as go
 import networkx as nx
 import requests
 import time
+import hashlib
 import os
 from datetime import datetime
 
@@ -52,10 +53,15 @@ div[data-testid="stDecoration"] {display: none;}
     color: #71717a !important;
 }
 
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
 .block-container {
     padding-top: 2rem;
     padding-bottom: 1rem;
     max-width: 1200px;
+    animation: fadeIn 0.25s ease-out;
 }
 
 /* --- Sidebar --- */
@@ -266,6 +272,48 @@ div[data-baseweb="tab-list"] {
 .empty-state-title { font-size: 1rem; font-weight: 600; color: #71717a; margin-bottom: 0.25rem; }
 .empty-state-desc { font-size: 0.85rem; }
 
+/* --- Skeleton loading --- */
+@keyframes shimmer {
+    0% { background-position: -400px 0; }
+    100% { background-position: 400px 0; }
+}
+.skeleton {
+    background: linear-gradient(90deg, #18181b 25%, #27272a 50%, #18181b 75%);
+    background-size: 800px 100%;
+    animation: shimmer 1.5s infinite linear;
+    border-radius: 0.375rem;
+}
+.skeleton-block {
+    background: linear-gradient(90deg, #18181b 25%, #27272a 50%, #18181b 75%);
+    background-size: 800px 100%;
+    animation: shimmer 1.5s infinite linear;
+    border: 1px solid #27272a;
+    border-radius: 0.5rem;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+}
+.loading-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 60vh;
+    gap: 1rem;
+}
+.loading-logo {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #fafafa;
+    animation: pulse 2s ease-in-out infinite;
+}
+.loading-text {
+    font-size: 0.8rem;
+    color: #52525b;
+}
+
 /* --- Hide radio keyboard tooltip --- */
 div[data-testid="InputInstructions"] { display: none !important; }
 </style>
@@ -284,39 +332,55 @@ if 'watchlist' not in st.session_state:
     st.session_state.watchlist = []
 if 'current_page' not in st.session_state:
     st.session_state.current_page = 'Dashboard'
+if 'investigation_result' not in st.session_state:
+    st.session_state.investigation_result = None
 
 
 # ---------------------------------------------------------------------------
 # Authentication
 # ---------------------------------------------------------------------------
 
+_SESSION_KEY = "graphsentry-2026"
+
+
+def _make_token(email):
+    return hashlib.sha256(f"{_SESSION_KEY}:{email}".encode()).hexdigest()[:24]
+
+
+# Restore session from URL token on page reload
+if not st.session_state.authenticated:
+    _tok = st.query_params.get("_gs_t")
+    _usr = st.query_params.get("_gs_u")
+    if _tok and _usr and _tok == _make_token(_usr):
+        try:
+            creds = st.secrets.get("credentials", {})
+            for _, user_data in creds.items():
+                if user_data.get("email", "").lower() == _usr.lower():
+                    st.session_state.authenticated = True
+                    st.session_state.user_email = user_data["email"]
+                    st.session_state.user_name = user_data.get("name", _usr)
+                    st.session_state.user_role = user_data.get("role", "analyst")
+                    break
+        except Exception:
+            pass
 
 
 def authenticate(email, password):
     """Validate credentials against secrets.toml using bcrypt."""
     try:
         creds = st.secrets.get("credentials", {})
-    except Exception as e:
-        st.error(f"DEBUG: secrets error: {e}")
+    except Exception:
         return False, None
-
-    st.info(f"DEBUG: creds keys = {list(creds.keys()) if hasattr(creds, 'keys') else type(creds)}")
 
     for user_key, user_data in creds.items():
         if user_data.get("email", "").lower() == email.lower():
             stored_hash = user_data.get("password", "")
-            st.info(f"DEBUG: matched email, hash starts with: {stored_hash[:20]}")
-            try:
-                if bcrypt.checkpw(password.encode(), stored_hash.encode()):
-                    return True, {
-                        'name': user_data.get('name', email),
-                        'email': user_data.get('email', email),
-                        'role': user_data.get('role', 'analyst'),
-                    }
-                else:
-                    st.error("DEBUG: bcrypt check returned False")
-            except Exception as e:
-                st.error(f"DEBUG: bcrypt error: {e}")
+            if bcrypt.checkpw(password.encode(), stored_hash.encode()):
+                return True, {
+                    'name': user_data.get('name', email),
+                    'email': user_data.get('email', email),
+                    'role': user_data.get('role', 'analyst'),
+                }
     return False, None
 
 
@@ -354,6 +418,8 @@ def show_login():
                         st.session_state.user_email = user_info['email']
                         st.session_state.user_name = user_info['name']
                         st.session_state.user_role = user_info['role']
+                        st.query_params["_gs_t"] = _make_token(user_info['email'])
+                        st.query_params["_gs_u"] = user_info['email']
                         st.rerun()
                     else:
                         st.error("Invalid email or password.")
@@ -413,7 +479,7 @@ def get_artefact(filename, *local_candidates):
     return hf_hub_download(repo_id=HF_REPO, filename=filename)
 
 
-@st.cache_resource
+@st.cache_resource(show_spinner=False)
 def load_system():
     # --- Model (always needed) ---
     model_path = get_artefact(
@@ -546,11 +612,23 @@ def find_similar_subgraphs(query_fp, fingerprints, df, top_k=5):
 # Blockstream API
 # ---------------------------------------------------------------------------
 
-def fetch_address_graph(address, max_txs=25):
+def fetch_address_graph(address, max_txs=50):
+    txs = []
     try:
-        resp = requests.get(f'{BLOCKSTREAM_API}/address/{address}/txs', timeout=10)
-        resp.raise_for_status()
-        txs = resp.json()[:max_txs]
+        url = f'{BLOCKSTREAM_API}/address/{address}/txs'
+        while len(txs) < max_txs:
+            resp = requests.get(url, timeout=10)
+            resp.raise_for_status()
+            batch = resp.json()
+            if not batch:
+                break
+            txs.extend(batch)
+            if len(batch) < 25:
+                break
+            last_txid = batch[-1]['txid']
+            url = f'{BLOCKSTREAM_API}/address/{address}/txs/chain/{last_txid}'
+            time.sleep(0.25)
+        txs = txs[:max_txs]
     except Exception as e:
         return None, str(e)
 
@@ -573,8 +651,7 @@ def fetch_address_graph(address, max_txs=25):
             for dst in filter(None, outputs):
                 G.add_edge(src, dst)
 
-        time.sleep(0.1)
-
+    G.graph['tx_count'] = len(txs)
     return G, None
 
 
@@ -711,7 +788,16 @@ def generate_report(address, risk_score, matches, props):
 # Load system
 # ---------------------------------------------------------------------------
 
+_sys_loading = st.empty()
+_sys_loading.markdown(
+    '<div class="loading-screen">'
+    '<div class="loading-logo">GraphSentry</div>'
+    '<div class="loading-text">Initialising system — loading model and reference data...</div>'
+    '</div>',
+    unsafe_allow_html=True,
+)
 model, dataset, df, fingerprints = load_system()
+_sys_loading.empty()
 
 if model is None:
     st.error("System initialisation failed. Unable to load model or reference data.")
@@ -741,23 +827,9 @@ with st.sidebar:
         st.session_state.authenticated = False
         st.session_state.investigation_history = []
         st.session_state.watchlist = []
+        st.session_state.investigation_result = None
+        st.query_params.clear()
         st.rerun()
-
-
-# ===========================================================================
-# Page transition
-# ===========================================================================
-
-if page != st.session_state.current_page:
-    st.session_state.current_page = page
-    with st.container():
-        st.markdown(
-            '<div style="display:flex;justify-content:center;align-items:center;'
-            'height:50vh;"><div style="color:#52525b;font-size:0.85rem;">Loading...</div></div>',
-            unsafe_allow_html=True,
-        )
-    time.sleep(0.3)
-    st.rerun()
 
 
 # ===========================================================================
@@ -874,20 +946,53 @@ elif page == "Investigate":
     with col_btn:
         go_btn = st.button("Analyse", type="primary", use_container_width=True)
 
+    # --- Run analysis on button click ---
+    _analysis_ph = st.empty()
+
     if go_btn and query.strip():
         query = query.strip()
         is_txid = len(query) == 64 and all(c in '0123456789abcdef' for c in query.lower())
 
-        with st.spinner("Retrieving transaction data from blockchain..."):
-            if is_txid:
-                G, err = fetch_tx_graph(query)
-            else:
-                G, err = fetch_address_graph(query)
+        _analysis_ph.markdown(
+            '<div style="margin-top:1rem;">'
+            '<div class="skeleton" style="width:100%;height:3rem;margin-bottom:1.5rem;"></div>'
+            '<div style="display:grid;grid-template-columns:3fr 2fr;gap:1.5rem;">'
+            '<div>'
+            '<div class="skeleton" style="width:140px;height:0.7rem;margin-bottom:1rem;"></div>'
+            '<div class="skeleton-block" style="height:420px;"></div>'
+            '</div>'
+            '<div>'
+            '<div class="skeleton" style="width:150px;height:0.7rem;margin-bottom:1rem;"></div>'
+            '<div class="skeleton" style="width:100%;height:2rem;margin-bottom:0.5rem;"></div>'
+            '<div class="skeleton" style="width:100%;height:2rem;margin-bottom:0.5rem;"></div>'
+            '<div class="skeleton" style="width:100%;height:2rem;margin-bottom:0.5rem;"></div>'
+            '<div class="skeleton" style="width:100%;height:2rem;margin-bottom:0.5rem;"></div>'
+            '<div class="skeleton" style="width:100%;height:2rem;margin-bottom:0.5rem;"></div>'
+            '<div class="skeleton" style="width:100%;height:2rem;margin-bottom:0.5rem;"></div>'
+            '<div class="skeleton" style="width:100%;height:2rem;margin-bottom:2rem;"></div>'
+            '<div class="skeleton" style="width:180px;height:0.7rem;margin-bottom:1rem;"></div>'
+            '<div class="skeleton-block" style="height:4.5rem;margin-bottom:0.75rem;"></div>'
+            '<div class="skeleton-block" style="height:4.5rem;margin-bottom:0.75rem;"></div>'
+            '<div class="skeleton-block" style="height:4.5rem;"></div>'
+            '</div>'
+            '</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+        if is_txid:
+            G, err = fetch_tx_graph(query)
+        else:
+            G, err = fetch_address_graph(query)
+
+        _analysis_ph.empty()
 
         if err:
             st.error(f"Unable to retrieve data: {err}")
+            st.session_state.investigation_result = None
         elif G is None or G.number_of_nodes() == 0:
             st.warning("No transaction data found for this input.")
+            st.session_state.investigation_result = None
         else:
             G_undirected = G.to_undirected()
             query_fp = compute_fingerprint(G_undirected)
@@ -897,11 +1002,7 @@ elif page == "Investigate":
             estimated_risk = (sum(m['risk_score'] * m['similarity'] for m in matches) / total_weight
                               if total_weight > 0 else 0.5)
 
-            # Record in history
             add_to_history(query, estimated_risk, G.number_of_nodes(), G.number_of_edges())
-
-            # Verdict
-            render_verdict(estimated_risk)
 
             props = {
                 'Addresses': str(G.number_of_nodes()),
@@ -913,71 +1014,87 @@ elif page == "Investigate":
                 'Sub-networks': str(nx.number_connected_components(G_undirected)),
             }
 
-            col_graph, col_details = st.columns([3, 2])
-
-            with col_graph:
-                st.markdown('<div class="section-header">Transaction Graph</div>',
-                            unsafe_allow_html=True)
-                target = query if not is_txid else None
-                fig = plot_graph_nx(G, target_address=target)
-                st.plotly_chart(fig, use_container_width=True)
-                st.caption(f"Highlighted node = queried address. Size = connection count. "
-                           f"{G.number_of_nodes()} addresses, {G.number_of_edges()} connections.")
-
-                col_act1, col_act2 = st.columns(2)
-                with col_act1:
-                    report = generate_report(query, estimated_risk, matches, props)
-                    st.download_button(
-                        "Export Report",
-                        data=report,
-                        file_name=f"graphsentry_report_{query[:16]}_{datetime.now().strftime('%Y%m%d')}.csv",
-                        mime="text/csv",
-                        use_container_width=True,
-                    )
-                with col_act2:
-                    already_watched = any(w['address'] == query for w in st.session_state.watchlist)
-                    if already_watched:
-                        st.button("On Watchlist", disabled=True, use_container_width=True)
-                    else:
-                        if st.button("Add to Watchlist", use_container_width=True):
-                            st.session_state.watchlist.append({
-                                'address': query,
-                                'risk_score': estimated_risk,
-                                'risk_level': risk_label(estimated_risk),
-                                'added': datetime.now().strftime('%Y-%m-%d %H:%M'),
-                                'nodes': G.number_of_nodes(),
-                            })
-                            st.toast("Address added to watchlist")
-                            st.rerun()
-
-            with col_details:
-                st.markdown('<div class="section-header">Network Properties</div>',
-                            unsafe_allow_html=True)
-                for label, value in props.items():
-                    st.markdown(f'<div class="stat-row"><span class="stat-label">{label}</span>'
-                                f'<span class="stat-value">{value}</span></div>', unsafe_allow_html=True)
-
-                st.markdown("")
-                st.markdown('<div class="section-header">Matched Known Patterns</div>',
-                            unsafe_allow_html=True)
-
-                for m in matches:
-                    gt_color = '#ef4444' if m['ground_truth'] == 'Illicit' else '#22c55e'
-                    st.markdown(f"""<div class="match-card">
-                        <div style="display:flex;justify-content:space-between;align-items:center;">
-                            <span style="font-weight:600;color:#fafafa;">Case #{m['case_id']}</span>
-                            <span style="font-size:0.75rem;color:#52525b;">{m['similarity']*100:.0f}% match</span>
-                        </div>
-                        <div style="font-size:0.8rem;color:#71717a;margin-top:0.25rem;">
-                            Risk: {m['risk_score']*100:.1f}% · <span style="color:{gt_color};">{m['ground_truth']}</span> · {m['nodes']} addresses, {m['edges']} connections
-                        </div>
-                    </div>""", unsafe_allow_html=True)
-
-
+            st.session_state.investigation_result = {
+                'query': query, 'is_txid': is_txid, 'G': G,
+                'estimated_risk': estimated_risk, 'matches': matches, 'props': props,
+            }
     elif go_btn:
         st.warning("Please enter a Bitcoin address or transaction ID.")
 
-    elif not query:
+    # --- Render results from session state ---
+    inv = st.session_state.get('investigation_result')
+    if inv:
+        render_verdict(inv['estimated_risk'])
+
+        _G = inv['G']
+        _query = inv['query']
+        _is_txid = inv['is_txid']
+        _matches = inv['matches']
+        _props = inv['props']
+        _risk = inv['estimated_risk']
+
+        col_graph, col_details = st.columns([3, 2])
+
+        with col_graph:
+            st.markdown('<div class="section-header">Transaction Graph</div>',
+                        unsafe_allow_html=True)
+            target = _query if not _is_txid else None
+            fig = plot_graph_nx(_G, target_address=target)
+            st.plotly_chart(fig, use_container_width=True)
+            _tx_count = _G.graph.get('tx_count')
+            _sample_note = f" Based on the {_tx_count} most recent transactions." if _tx_count else ""
+            st.caption(f"Highlighted node = queried address. Size = connection count. "
+                       f"{_G.number_of_nodes()} addresses, {_G.number_of_edges()} connections.{_sample_note}")
+
+            col_act1, col_act2 = st.columns(2)
+            with col_act1:
+                report = generate_report(_query, _risk, _matches, _props)
+                st.download_button(
+                    "Export Report",
+                    data=report,
+                    file_name=f"graphsentry_report_{_query[:16]}_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                )
+            with col_act2:
+                already_watched = any(w['address'] == _query for w in st.session_state.watchlist)
+                if already_watched:
+                    st.button("On Watchlist", disabled=True, use_container_width=True)
+                else:
+                    if st.button("Add to Watchlist", use_container_width=True):
+                        st.session_state.watchlist.append({
+                            'address': _query,
+                            'risk_score': _risk,
+                            'risk_level': risk_label(_risk),
+                            'added': datetime.now().strftime('%Y-%m-%d %H:%M'),
+                            'nodes': _G.number_of_nodes(),
+                        })
+                        st.toast("Address added to watchlist")
+                        st.rerun()
+
+        with col_details:
+            st.markdown('<div class="section-header">Network Properties</div>',
+                        unsafe_allow_html=True)
+            for label, value in _props.items():
+                st.markdown(f'<div class="stat-row"><span class="stat-label">{label}</span>'
+                            f'<span class="stat-value">{value}</span></div>', unsafe_allow_html=True)
+
+            st.markdown("")
+            st.markdown('<div class="section-header">Matched Known Patterns</div>',
+                        unsafe_allow_html=True)
+
+            for m in _matches:
+                gt_color = '#ef4444' if m['ground_truth'] == 'Illicit' else '#22c55e'
+                st.markdown(f"""<div class="match-card">
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <span style="font-weight:600;color:#fafafa;">Case #{m['case_id']}</span>
+                        <span style="font-size:0.75rem;color:#52525b;">{m['similarity']*100:.0f}% match</span>
+                    </div>
+                    <div style="font-size:0.8rem;color:#71717a;margin-top:0.25rem;">
+                        Risk: {m['risk_score']*100:.1f}% · <span style="color:{gt_color};">{m['ground_truth']}</span> · {m['nodes']} addresses, {m['edges']} connections
+                    </div>
+                </div>""", unsafe_allow_html=True)
+    elif not go_btn:
         st.markdown(
             '<div class="empty-state">'
             ''
