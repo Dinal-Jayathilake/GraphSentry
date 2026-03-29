@@ -5,6 +5,8 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "bcrypt>=5.0.0",
+    "huggingface-hub>=1.7.2",
     "matplotlib>=3.10.8",
     "networkx>=3.6.1",
     "plotly>=6.6.0",

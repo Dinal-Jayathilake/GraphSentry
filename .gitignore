@@ -18,6 +18,7 @@ src/models/
 # Environment / secrets
 .env
 .env.*
+.streamlit/secrets.toml
 
 # Jupyter
 .ipynb_checkpoints/
