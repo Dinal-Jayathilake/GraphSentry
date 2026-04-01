@@ -54,14 +54,14 @@ div[data-testid="stDecoration"] {display: none;}
 }
 
 @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(6px); }
-    to { opacity: 1; transform: translateY(0); }
+    from { opacity: 0; }
+    to { opacity: 1; }
 }
 .block-container {
     padding-top: 2rem;
     padding-bottom: 1rem;
     max-width: 1200px;
-    animation: fadeIn 0.25s ease-out;
+    animation: fadeIn 0.2s ease-out;
 }
 
 /* --- Sidebar --- */
@@ -402,7 +402,7 @@ def show_login():
         )
 
         with st.form("login_form"):
-            email = st.text_input("Email", placeholder="analyst@graphsentry.io")
+            email = st.text_input("Email", placeholder="Enter your email")
             st.markdown('<div style="height:0.15rem;"></div>', unsafe_allow_html=True)
             password = st.text_input("Password", type="password", placeholder="Enter your password")
             st.markdown('<div style="height:0.5rem;"></div>', unsafe_allow_html=True)
@@ -689,7 +689,7 @@ def plot_graph_nx(G, target_address=None):
         return fig
 
     G_u = G.to_undirected() if G.is_directed() else G
-    pos = nx.spring_layout(G_u, seed=42, k=2.0/max(1, G.number_of_nodes()**0.5))
+    pos = nx.spring_layout(G_u, seed=42, k=2.0/max(1, G.number_of_nodes()**0.5), iterations=25)
 
     edge_x, edge_y = [], []
     for u, v in G_u.edges():
@@ -932,9 +932,10 @@ if page == "Dashboard":
 
 elif page == "Investigate":
     st.markdown('<div class="page-header">Investigate Address</div>', unsafe_allow_html=True)
-    st.markdown('<div class="page-desc">Analyse a Bitcoin address or transaction by building its '
-                'transaction graph from live blockchain data and matching it against known patterns.</div>',
+    st.markdown('<div class="page-desc">Analyse a Bitcoin address by computing its structural fingerprint '
+                'from recent transaction activity and matching it against known illicit patterns.</div>',
                 unsafe_allow_html=True)
+
 
     col_input, col_btn = st.columns([4, 1])
     with col_input:
@@ -1014,8 +1015,11 @@ elif page == "Investigate":
                 'Sub-networks': str(nx.number_connected_components(G_undirected)),
             }
 
+            target = query if not is_txid else None
+            fig = plot_graph_nx(G, target_address=target)
+
             st.session_state.investigation_result = {
-                'query': query, 'is_txid': is_txid, 'G': G,
+                'query': query, 'is_txid': is_txid, 'G': G, 'fig': fig,
                 'estimated_risk': estimated_risk, 'matches': matches, 'props': props,
             }
     elif go_btn:
@@ -1038,13 +1042,11 @@ elif page == "Investigate":
         with col_graph:
             st.markdown('<div class="section-header">Transaction Graph</div>',
                         unsafe_allow_html=True)
-            target = _query if not _is_txid else None
-            fig = plot_graph_nx(_G, target_address=target)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(inv['fig'], use_container_width=True)
             _tx_count = _G.graph.get('tx_count')
-            _sample_note = f" Based on the {_tx_count} most recent transactions." if _tx_count else ""
-            st.caption(f"Highlighted node = queried address. Size = connection count. "
-                       f"{_G.number_of_nodes()} addresses, {_G.number_of_edges()} connections.{_sample_note}")
+            _sample_note = f"Snapshot of {_tx_count} recent transactions. " if _tx_count else ""
+            st.caption(f"{_sample_note}Highlighted node = queried address. "
+                       f"Size = connection count. {_G.number_of_nodes()} addresses, {_G.number_of_edges()} connections.")
 
             col_act1, col_act2 = st.columns(2)
             with col_act1:
