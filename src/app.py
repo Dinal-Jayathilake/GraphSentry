@@ -17,10 +17,6 @@ from torch_geometric.nn import GCNConv, global_mean_pool
 from torch_geometric.utils import to_networkx, degree
 
 
-# ---------------------------------------------------------------------------
-# Page config
-# ---------------------------------------------------------------------------
-
 st.set_page_config(
     page_title="GraphSentry",
     page_icon="G",
@@ -28,10 +24,6 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-
-# ---------------------------------------------------------------------------
-# CSS
-# ---------------------------------------------------------------------------
 
 st.markdown("""
 <style>
@@ -45,7 +37,6 @@ html, body, [class*="st-"] {
 #MainMenu, footer {visibility: hidden;}
 div[data-testid="stDecoration"] {display: none;}
 
-/* Sidebar collapse/expand button icon */
 [data-testid="stSidebarCollapseButton"] button span,
 [data-testid="collapsedControl"] button span {
     font-family: 'Material Symbols Rounded' !important;
@@ -64,7 +55,6 @@ div[data-testid="stDecoration"] {display: none;}
     animation: fadeIn 0.2s ease-out;
 }
 
-/* --- Sidebar --- */
 section[data-testid="stSidebar"] {
     background: #0a0a0b;
     border-right: 1px solid #27272a;
@@ -73,7 +63,6 @@ section[data-testid="stSidebar"] .block-container {
     padding-top: 1.5rem;
 }
 
-/* --- Metrics --- */
 div[data-testid="stMetric"] {
     background: #18181b;
     border: 1px solid #27272a;
@@ -88,7 +77,6 @@ div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
     font-size: 1.75rem; font-weight: 700; color: #fafafa;
 }
 
-/* --- Data elements --- */
 div[data-testid="stDataFrame"] {
     border: 1px solid #27272a; border-radius: 0.5rem; overflow: hidden;
 }
@@ -96,7 +84,6 @@ div.stPlotlyChart {
     border: 1px solid #27272a; border-radius: 0.5rem; overflow: hidden;
 }
 
-/* --- Inputs --- */
 div[data-baseweb="select"] > div {
     border-color: #27272a; border-radius: 0.375rem;
     background: #18181b; color: #fafafa;
@@ -110,7 +97,6 @@ input[data-baseweb="input"] {
 }
 input::placeholder { color: #52525b; }
 
-/* --- Multiselect tags --- */
 span[data-baseweb="tag"] {
     background: #27272a !important;
     color: #fafafa !important;
@@ -130,7 +116,6 @@ div[data-baseweb="popover"] li:hover {
     background: #27272a;
 }
 
-/* --- Buttons --- */
 button[kind="primary"],
 button[data-testid="stBaseButton-primary"],
 div[data-testid="stFormSubmitButton"] button,
@@ -149,7 +134,6 @@ div[data-testid="stFormSubmitButton"] button p {
     color: #09090b !important; font-weight: 600 !important;
 }
 
-/* --- Forms --- */
 div[data-testid="stForm"] {
     border-color: #27272a;
     border-radius: 0.5rem;
@@ -169,7 +153,6 @@ button[kind="secondary"]:hover, button[data-testid="stBaseButton-secondary"]:hov
     background: #18181b;
 }
 
-/* --- Tabs --- */
 button[data-baseweb="tab"] {
     font-family: 'Inter', sans-serif;
     font-size: 0.875rem;
@@ -192,7 +175,6 @@ div[data-baseweb="tab-list"] {
     gap: 0;
 }
 
-/* --- Custom classes --- */
 .section-header {
     font-size: 0.7rem; font-weight: 600; color: #71717a;
     text-transform: uppercase; letter-spacing: 0.05em;
@@ -272,7 +254,6 @@ div[data-baseweb="tab-list"] {
 .empty-state-title { font-size: 1rem; font-weight: 600; color: #71717a; margin-bottom: 0.25rem; }
 .empty-state-desc { font-size: 0.85rem; }
 
-/* --- Skeleton loading --- */
 @keyframes shimmer {
     0% { background-position: -400px 0; }
     100% { background-position: 400px 0; }
@@ -314,15 +295,10 @@ div[data-baseweb="tab-list"] {
     color: #52525b;
 }
 
-/* --- Hide radio keyboard tooltip --- */
 div[data-testid="InputInstructions"] { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
 
-
-# ---------------------------------------------------------------------------
-# Session state initialisation
-# ---------------------------------------------------------------------------
 
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
@@ -336,10 +312,6 @@ if 'investigation_result' not in st.session_state:
     st.session_state.investigation_result = None
 
 
-# ---------------------------------------------------------------------------
-# Authentication
-# ---------------------------------------------------------------------------
-
 _SESSION_KEY = "graphsentry-2026"
 
 
@@ -347,7 +319,6 @@ def _make_token(email):
     return hashlib.sha256(f"{_SESSION_KEY}:{email}".encode()).hexdigest()[:24]
 
 
-# Restore session from URL token on page reload
 if not st.session_state.authenticated:
     _tok = st.query_params.get("_gs_t")
     _usr = st.query_params.get("_gs_u")
@@ -366,7 +337,6 @@ if not st.session_state.authenticated:
 
 
 def authenticate(email, password):
-    """Validate credentials against secrets.toml using bcrypt."""
     try:
         creds = st.secrets.get("credentials", {})
     except Exception:
@@ -385,7 +355,6 @@ def authenticate(email, password):
 
 
 def show_login():
-    # Hide sidebar on login page
     st.markdown('<style>section[data-testid="stSidebar"]{display:none;}</style>',
                 unsafe_allow_html=True)
 
@@ -430,10 +399,6 @@ if not st.session_state.authenticated:
     st.stop()
 
 
-# ---------------------------------------------------------------------------
-# Model
-# ---------------------------------------------------------------------------
-
 class GNNClassifier(torch.nn.Module):
     def __init__(self, in_channels, hidden=128, dropout=0.5):
         super().__init__()
@@ -455,10 +420,6 @@ class GNNClassifier(torch.nn.Module):
         return self.classifier(x)
 
 
-# ---------------------------------------------------------------------------
-# Data loading
-# ---------------------------------------------------------------------------
-
 HF_REPO = 'Dinal-Jayathilake/graphsentry-artefacts'
 THRESHOLD = 0.75
 BLOCKSTREAM_API = 'https://blockstream.info/api'
@@ -472,7 +433,6 @@ def resolve_path(*candidates):
 
 
 def get_artefact(filename, *local_candidates):
-    """Try local paths first, then download from Hugging Face Hub."""
     path = resolve_path(*local_candidates)
     if path:
         return path
@@ -481,7 +441,6 @@ def get_artefact(filename, *local_candidates):
 
 @st.cache_resource(show_spinner=False)
 def load_system():
-    # --- Model (always needed) ---
     model_path = get_artefact(
         'model_a.pth',
         'src/models/model_a.pth', 'src/models/final_mvp.pth',
@@ -490,15 +449,13 @@ def load_system():
     if not model_path:
         return None, None, None, None
 
-    # --- Try full-scale pre-computed fingerprints first ---
     try:
         npz_path = get_artefact('fullscale_fingerprints.npz')
         npz = np.load(npz_path)
-        fp_array = npz['fingerprints']   # (N, 8)
-        risk_scores = npz['risk_scores']  # (N,)
-        labels = npz['labels']            # (N,)
+        fp_array = npz['fingerprints']
+        risk_scores = npz['risk_scores']
+        labels = npz['labels']
 
-        # Infer input dimension from model weights
         state = torch.load(model_path, map_location='cpu')
         in_dim = state['conv1.lin.weight'].shape[1]
         model = GNNClassifier(in_channels=in_dim)
@@ -520,7 +477,6 @@ def load_system():
     except Exception:
         pass
 
-    # --- Fallback: compute from demo_data.pt ---
     data_path = get_artefact('demo_data.pt', 'src/data/demo_data.pt', 'data/demo_data.pt')
     if not data_path:
         return None, None, None, None
@@ -563,10 +519,6 @@ def load_system():
     return model, dataset, df, fingerprints
 
 
-# ---------------------------------------------------------------------------
-# Structural fingerprinting
-# ---------------------------------------------------------------------------
-
 def compute_fingerprint(G):
     n = G.number_of_nodes()
     e = G.number_of_edges()
@@ -607,10 +559,6 @@ def find_similar_subgraphs(query_fp, fingerprints, df, top_k=5):
         })
     return results
 
-
-# ---------------------------------------------------------------------------
-# Blockstream API
-# ---------------------------------------------------------------------------
 
 def fetch_address_graph(address, max_txs=50):
     txs = []
@@ -678,10 +626,6 @@ def fetch_tx_graph(txid):
     return G, None
 
 
-# ---------------------------------------------------------------------------
-# Graph visualisation
-# ---------------------------------------------------------------------------
-
 def plot_graph_nx(G, target_address=None):
     if G.number_of_nodes() == 0:
         fig = go.Figure()
@@ -723,10 +667,6 @@ def plot_graph_nx(G, target_address=None):
     return fig
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 def risk_label(score):
     if score >= THRESHOLD:
         return 'High'
@@ -757,12 +697,10 @@ def add_to_history(address, risk_score, nodes, edges):
         'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M'),
     }
     st.session_state.investigation_history.insert(0, entry)
-    # Keep last 50
     st.session_state.investigation_history = st.session_state.investigation_history[:50]
 
 
 def generate_report(address, risk_score, matches, props):
-    """Generate a CSV-formatted investigation report."""
     lines = [
         f"GraphSentry Investigation Report",
         f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
@@ -784,10 +722,6 @@ def generate_report(address, risk_score, matches, props):
     return "\n".join(lines)
 
 
-# ---------------------------------------------------------------------------
-# Load system
-# ---------------------------------------------------------------------------
-
 _sys_loading = st.empty()
 _sys_loading.markdown(
     '<div class="loading-screen">'
@@ -803,10 +737,6 @@ if model is None:
     st.error("System initialisation failed. Unable to load model or reference data.")
     st.stop()
 
-
-# ---------------------------------------------------------------------------
-# Sidebar navigation
-# ---------------------------------------------------------------------------
 
 with st.sidebar:
     st.markdown('<div class="sidebar-logo">GraphSentry</div>', unsafe_allow_html=True)
@@ -832,10 +762,6 @@ with st.sidebar:
         st.rerun()
 
 
-# ===========================================================================
-# PAGE: DASHBOARD
-# ===========================================================================
-
 if page == "Dashboard":
     st.markdown('<div class="page-header">Dashboard</div>', unsafe_allow_html=True)
     st.markdown('<div class="page-desc">Overview of investigation activity and watchlist status.</div>',
@@ -844,7 +770,6 @@ if page == "Dashboard":
     history = st.session_state.investigation_history
     watchlist = st.session_state.watchlist
 
-    # --- Metrics row ---
     col1, col2, col3, col4 = st.columns(4)
 
     n_inv = len(history)
@@ -861,7 +786,6 @@ if page == "Dashboard":
 
     col_chart, col_history = st.columns([1, 1])
 
-    # --- Risk distribution of investigations ---
     with col_chart:
         st.markdown('<div class="section-header">Investigation Risk Breakdown</div>',
                     unsafe_allow_html=True)
@@ -897,7 +821,6 @@ if page == "Dashboard":
             )
             st.plotly_chart(fig_dist, use_container_width=True)
 
-    # --- Recent investigations ---
     with col_history:
         st.markdown('<div class="section-header">Recent Investigations</div>', unsafe_allow_html=True)
 
@@ -926,10 +849,6 @@ if page == "Dashboard":
                 )
 
 
-# ===========================================================================
-# PAGE: INVESTIGATE
-# ===========================================================================
-
 elif page == "Investigate":
     st.markdown('<div class="page-header">Investigate Address</div>', unsafe_allow_html=True)
     st.markdown('<div class="page-desc">Analyse a Bitcoin address by computing its structural fingerprint '
@@ -947,7 +866,6 @@ elif page == "Investigate":
     with col_btn:
         go_btn = st.button("Analyse", type="primary", use_container_width=True)
 
-    # --- Run analysis on button click ---
     _analysis_ph = st.empty()
 
     if go_btn and query.strip():
@@ -1025,7 +943,6 @@ elif page == "Investigate":
     elif go_btn:
         st.warning("Please enter a Bitcoin address or transaction ID.")
 
-    # --- Render results from session state ---
     inv = st.session_state.get('investigation_result')
     if inv:
         render_verdict(inv['estimated_risk'])
@@ -1108,10 +1025,6 @@ elif page == "Investigate":
         )
 
 
-# ===========================================================================
-# PAGE: WATCHLIST
-# ===========================================================================
-
 elif page == "Watchlist":
     st.markdown('<div class="page-header">Watchlist</div>', unsafe_allow_html=True)
     st.markdown('<div class="page-desc">Flagged addresses for ongoing monitoring and review.</div>',
@@ -1130,7 +1043,6 @@ elif page == "Watchlist":
     else:
         wl = st.session_state.watchlist
 
-        # Summary metrics
         col1, col2, col3 = st.columns(3)
         n_w_high = sum(1 for w in wl if w['risk_level'] == 'High')
         n_w_med = sum(1 for w in wl if w['risk_level'] == 'Medium')
@@ -1141,7 +1053,6 @@ elif page == "Watchlist":
 
         st.markdown("")
 
-        # Watchlist table
         to_remove = None
         for i, w in enumerate(wl):
             addr = w['address']
@@ -1170,7 +1081,6 @@ elif page == "Watchlist":
             st.session_state.watchlist.pop(to_remove)
             st.rerun()
 
-        # Export watchlist
         st.markdown("")
         wl_data = pd.DataFrame(st.session_state.watchlist)
         csv = wl_data.to_csv(index=False)
